@@ -2,6 +2,7 @@ from argparse import ArgumentParser
 from pathlib import Path
 import datetime as dt
 import json
+import csv
 
 
 date_format = '%m/%d/%y'
@@ -10,6 +11,13 @@ path = Path('expenses.json')
 if not path.exists():
     with open(path, 'w') as file:
         json.dump(expenses, file)
+
+def print_expenses(expense):
+    print(f'\nID:          {expense['expense_id']}')
+    print(f'DATE:        {expense['date']}')
+    print(f'DESCRIPTION: {expense['description']}')
+    print(f'AMOUNT:      ${expense['amount']}')
+    print(f'----------------------------------')
 
 def load_data(path):
     '''
@@ -85,12 +93,18 @@ def delete_expense(data, find_id):
         returns an integer). We then remove the expense dictionary if 'find_id'
         equals to an ID in our list.
     '''
+    found_id = False
     for expense in data:
         if find_id == expense['expense_id']:
+            found_id = True
             data.remove(expense)
-            print('Expense deleted.')
-        else:
-            print('This ID does not exist.')
+            break
+            
+    if found_id == True:
+        print('\nExpense deleted.')
+    elif found_id == False: 
+        print('\nID out of bounds.')
+
 
 def list_expenses(data):
     '''
@@ -98,11 +112,7 @@ def list_expenses(data):
         print each value according.
     '''
     for expense in data:
-        print(f'\nID:          {expense['expense_id']}')
-        print(f'DATE:        {expense['date']}')
-        print(f'DESCRIPTION: {expense['description']}')
-        print(f'AMOUNT:      ${expense['amount']}')
-        print(f'----------------------------------')
+        print_expenses(expense)
 
 def expense_summary(data):
     '''
@@ -139,6 +149,64 @@ def expense_summary_by_date(data, args):
     else:
         print(f'No expenses for this month.')
 
+def create_rows(data, expense, csvfile):
+    '''
+        Add the field names to the CSV file and write them as a header,
+        then apply the expense data to each field.
+    '''
+    fieldnames = ['description', 'amount', 'date', 'expense_id']
+    writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+    writer.writerow({'expense_id': f'ID:{expense['expense_id']}',
+                    'description': expense['description'],
+                    'amount': f'${expense['amount']}',
+                    'date': expense['date']})   
+     
+def create_csv(month, csvpath, data, today):
+    '''
+        Creeating the CSV, check if the month parameter has been filled, if it has
+        create a file based off the expenses for that specific month, otherwise
+        export all expense data in the expenses.json file.
+    '''
+    if month:
+        with open(csvpath, 'w', newline='') as csvfile:
+            found_month = False
+            for expense in data:
+                expense_date = dt.date.strptime(expense['date'], date_format)
+                if expense_date.month == month:
+                    found_month = True
+                    create_rows(data, expense, csvfile)
+                
+            if found_month == True:
+                print(f'Expenses for the month of {expense_date.strftime('%B').title()} exported as CSV')
+            elif found_month == False:
+                print('No expenses for this month')          
+    else:
+        with open(csvpath, 'w', newline='') as csvfile:
+            for expense in data:
+                create_rows(data, expense, csvfile)
+            print('Expenses exported as CSV')
+
+def export(data, args, month=''):
+    '''
+        Create a CSV file with data from the expenses.json. If a CSV file already exists with
+        the name we choose, ask the user if they'd like to replace the file, otherwise simply
+        create the file with the name chosen.
+    '''
+    date_file_format = '%m_%d_%y'
+    today = dt.date.today().strftime(date_file_format)
+    csvpath = Path(f'exports/{today}_{args.export}.csv'.replace(' ', '_'))
+    if not csvpath.exists():
+        create_csv(month, csvpath, data, today)
+    else:
+        while True:
+            message = input('This file name already exists, would you like to replace it? (y/n):\n\t')
+            if message == 'y' or message == 'Y':
+                create_csv(month, csvpath, data, today)
+                break
+            else:
+                print('Action canceled.')
+                break
+
 def main():
     parser = ArgumentParser()
     parser.add_argument('--add', action='store_true')
@@ -149,6 +217,7 @@ def main():
     parser.add_argument('--list', action='store_true')
     parser.add_argument('--summary', action='store_true')
     parser.add_argument('--month', type=int)
+    parser.add_argument('--export')
 
     args = parser.parse_args()
 
@@ -205,5 +274,16 @@ def main():
         data = load_data(path)
         expense_summary_by_date(data, args)
         save_data(path, data)  
+
+    # export as a CSV file
+    if args.export and not args.month:
+        data = load_data(path)
+        export(data, args)
+        save_data(path, data) 
+    elif args.export and args.month:
+        data = load_data(path)
+        export(data, args, args.month)
+        save_data(path, data)        
+
 if __name__ == '__main__':
     main()
